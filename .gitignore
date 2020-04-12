@@ -1,2 +1,3 @@
-data/
+data/raw
+data/pkl
 model/model.zip

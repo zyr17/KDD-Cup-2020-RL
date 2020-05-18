@@ -1,3 +1,4 @@
 data/raw
 data/pkl
 model/model.zip
+*/__pycache__/

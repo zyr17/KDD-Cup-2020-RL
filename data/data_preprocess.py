@@ -68,6 +68,10 @@ def hexagon_grid_table(force = False):
         vertex.append(list(map(float, line[1:])))
     ID = np.array(ID, dtype='uint64')
     vertex = np.array(vertex).reshape(-1, 6, 2)
+    vertex_x = np.array(vertex[:,:,0])
+    vertex_y = np.array(vertex[:,:,1])
+    vertex[:,:,0] = vertex_y
+    vertex[:,:,1] = vertex_x
     #pdb.set_trace()
     print('hexagon_grid_table:', len(ID), 'records')
     pickle.dump({'ID': ID, 'vertex': vertex}, open(filename, 'wb'))

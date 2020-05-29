@@ -2,5 +2,5 @@ data/raw
 data/pkl
 data/model
 model/model.zip
-*/__pycache__/
+__pycache__/
 .ipynb_checkpoints

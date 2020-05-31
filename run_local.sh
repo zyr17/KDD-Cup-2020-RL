@@ -8,5 +8,7 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
+ln -s . agent
+
 docker build -t kddcup -f Dockerfile .
 docker run -it --rm -v `pwd`:/app kddcup

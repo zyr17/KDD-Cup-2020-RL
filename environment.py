@@ -11,6 +11,7 @@ import multiprocessing
 import numpy as np
 import pickle
 import time
+from models import GridModel
 from common import find_grid_idx, extract_time_feat, min_gps, max_gps, real_distance, block_number, cuda
 delta_gps = max_gps - min_gps
 
@@ -18,18 +19,34 @@ delta_gps = max_gps - min_gps
 # In[2]:
 
 
-pkl_folder = 'data/pkl/'
-rd_data = pickle.load(open(pkl_folder + 'grid_order_reward.pkl', 'rb'))
-rd_data = np.concatenate([np.expand_dims(rd_data['reward'],2), np.expand_dims(rd_data['order'],2)], axis=2)
+model = GridModel()
+model.load_state_dict(torch.load('data/model/grid/best.pt')['model'])
+model.eval()
 
 
 # In[3]:
 
 
+pkl_folder = 'data/pkl/'
+rd_data = pickle.load(open(pkl_folder + 'grid_order_reward.pkl', 'rb'))
+meanstd = {'order': [1.3818544802263453, 2.0466071372530115], 'reward': [0.003739948797879627, 0.000964668315987685]}
+for i in meanstd.keys():
+    n = meanstd[i]
+    if i == 'order':
+        rd_data[i] = np.log(rd_data[i] + 1)
+    r = rd_data[i]
+    r -= n[0]
+    r /= n[1]
+rd_data = np.concatenate([np.expand_dims(rd_data['reward'],2), np.expand_dims(rd_data['order'],2)], axis=2)
+
+
+# In[4]:
+
+
 action_data = pickle.load(open(pkl_folder + 'carenv_actions.pkl', 'rb'))
 
 
-# In[31]:
+# In[46]:
 
 
 class CarEnv:
@@ -47,9 +64,11 @@ class CarEnv:
         choose_max: select as maximum how much actions
     """
     
-    def __init__(self, actions, reward_demand, random_seed = 0, choose_ratio = 0.6, choose_max = 12):
+    def __init__(self, actions, reward_demand, random_seed = None, choose_ratio = 0.6, choose_max = 12):
         self.actions = actions
         self.reward_demand = reward_demand
+        if random_seed == None:
+            random_seed = np.random.randint(1 << 31)
         self.rng = np.random.RandomState(random_seed)
         self.now_time = None
         self.now_state = None
@@ -61,6 +80,8 @@ class CarEnv:
         #self.reset()
         
     def _get_reward_demand(self, s):
+        if s[0] < 0 or s[1] < 0 or s[0] >= 1 or s[1] >= 1:
+            return np.array([0, 0])
         return self.reward_demand[int(s[0] * block_number[0]) * block_number[1] + int(s[1] * block_number[1]), s[2]]
         
     def _select_action(self):
@@ -83,8 +104,8 @@ class CarEnv:
                     if len(self.actions[block_idx][k][0]) > 0:
                         alla.append(self.actions[block_idx][k])
         alla = [np.concatenate(x) for x in zip(*alla)]
-        if len(alla[0]) == 0:
-            return [default_action]
+        if len(alla) == 0:
+            return default_action
         choose_num = int(self.rng.normal(self.choose_ratio, 2) * len(alla[0]))
         if choose_num <= 0:
             choose_num = 1
@@ -106,11 +127,18 @@ class CarEnv:
             alla[i] = np.append(alla[i], default_action[i])
         return alla
     
+    def _model_grid(self, args):
+        with torch.no_grad():
+            res = model(torch.tensor([args[:2]]), torch.tensor([args[2]]))
+            #print(args, res)
+            return res[1].item()
+    
     def reset(self):
         while True:
-            self.now_time = self.rng.randint(24) * 3600
-            s = [*self.rng.random(2), time.localtime(self.now_time).tm_hour]
+            self.now_time = self.rng.randint(86400)
+            s = [*self.rng.random(2), self.now_time // 3600]
             s += self._get_reward_demand(s).tolist()
+            s[-1] = self._model_grid(s[:3])
             self.now_state = s
             a = self._select_action()
             if len(a) == 1:
@@ -126,18 +154,20 @@ class CarEnv:
         if self.rng.random() < a[4]:
             reward = 0
             length = self.fail_waste # waste some time
-            self.now_time += length
-            self.now_state = [*self.now_state[:2], time.localtime(self.now_time).tm_hour]
+            self.now_time = int(self.now_time + length) % 86400
+            self.now_state = [*self.now_state[:2], self.now_time // 3600]
             s = self.now_state
             s += self._get_reward_demand(s).tolist()
+            s[-1] = self._model_grid(s[:3])
             self.now_actions = self._select_action()
             return s, reward, length, {'time': self.now_time}
         reward = a[3]
         length = a[2]
-        self.now_time = self.now_time + length
-        self.now_state = [*a[:2], time.localtime(self.now_time).tm_hour]
+        self.now_time = int(self.now_time + length) % 86400
+        self.now_state = [*a[:2], self.now_time // 3600]
         s = self.now_state
         s += self._get_reward_demand(s).tolist()
+        s[-1] = self._model_grid(s[:3])
         self.now_actions = self._select_action()
         return s, reward, length, {'time': self.now_time}
     def get_actions(self):
@@ -145,7 +175,7 @@ class CarEnv:
         return self.now_actions
 
 
-# In[32]:
+# In[47]:
 
 
 class EnvWorker(multiprocessing.Process):
@@ -255,8 +285,12 @@ class EnvVecs:
         for key in info[0].keys():
             res[key] = np.stack([x[key] for x in info])
         return res
+    
+    def __del__(self):
+        self.close()
 
-def get_carenvvec(number):
+def get_carenvvec(number, seed = None):
+    if seed == None:
+        return EnvVecs(CarEnv, number, (action_data, rd_data))
     return EnvVecs(CarEnv, number, (action_data, rd_data, 0), 2)
-
 

@@ -1,7 +1,12 @@
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import pickle
 import numpy as np
 import time
 import torch
+import os
 
 last_use_cuda = True
 
@@ -22,7 +27,7 @@ def cuda(tensor, use_cuda = None):
     else:
         return tensor
 
-folder = 'data/pkl/'
+folder = os.path.dirname(os.path.abspath(__file__)) + '/'
 min_gps = np.array([104.042102,30.652828])
 max_gps = np.array([104.129591,30.727818])
 real_distance = np.array([8350, 8350])

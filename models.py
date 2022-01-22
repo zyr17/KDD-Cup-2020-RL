@@ -47,7 +47,7 @@ class GridModel(nn.Module):
         #print(GID.shape, hour.shape, week.shape)
         x = torch.cat((GPS, hour), dim = 1)
         #print(x.shape)
-        return self.order(x).squeeze(), self.reward(x).squeeze()
+        return self.order(x).reshape(-1), self.reward(x).reshape(-1)
 
 class DVNNet(nn.Module):
     """fetch value function
@@ -84,4 +84,4 @@ class DVNNet(nn.Module):
         demand = demand.float().unsqueeze(1)
         x = torch.cat((lat, lon, hour, average_reward, demand), dim = 1)
         #print(x.shape)
-        return self.fc(x).squeeze()
+        return self.fc(x).reshape(-1)
